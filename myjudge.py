@@ -255,7 +255,7 @@ def testcase1_5(io):
 
 def read_record(filename="./BulletinBoard"): # {{{
     rec = []
-    factor = 100
+    factor = 1
     with open(filename, "rb") as f:
         content = f.read()
         for i in range(0, len(content), 25 * factor):

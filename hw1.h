@@ -1,6 +1,6 @@
 #define MAX_CLIENTS 20
-#define FROM_LEN 500
-#define CONTENT_LEN 2000
+#define FROM_LEN 5
+#define CONTENT_LEN 20
 #define RECORD_NUM 10
 #define RECORD_PATH "./BulletinBoard"
 
