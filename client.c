@@ -9,6 +9,7 @@
 
 #define ERR_EXIT(a) do { perror(a); exit(1); } while(0)
 #define BUFFER_SIZE 512
+#define DATA_SIZE sizeof(record) * RECORD_NUM
 
 typedef struct {
     char* ip; // server's ip
@@ -17,6 +18,8 @@ typedef struct {
     char buf[BUFFER_SIZE]; // data sent by/to server
     size_t buf_len; // bytes used by buf
 } client;
+
+char data[DATA_SIZE];
 
 client cli;
 static void init_client(char** argv);
@@ -30,10 +33,21 @@ static void init_client(char** argv);
 void print_welcome_msg(void) {printf("==============================\nWelcome to CSIE Bulletin board\n");}
 
 void pull_content(void) {
+    int n_post;
+    read(cli.conn_fd, &n_post, sizeof(int));
+    int n_bytes_left = n_post * sizeof(record);
+    char *ptr = data;
+    while (n_bytes_left > 0) {
+        int n_bytes = read(cli.conn_fd, ptr, n_bytes_left);
+        n_bytes_left -= n_bytes;
+        ptr += n_bytes;
+    }
     printf("==============================\n");
-    record re;
-    while (read(cli.conn_fd, &re, sizeof(record)) == sizeof(record))
-        printf("FROM: %s\nCONTENT:\n%s\n", re.From, re.Content);
+    ptr = data;
+    for (int i = 0; i < n_post; i++) {
+        printf("FROM: %s\nCONTENT:\n%s\n", ptr, ptr + FROM_LEN);
+        ptr += sizeof(record);
+    }
     printf("==============================\n");
 }
 

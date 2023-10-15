@@ -15,7 +15,8 @@
 
 #define ERR_EXIT(a) do { perror(a); exit(1); } while(0)
 #define BUFFER_SIZE 512
-#define SEL_WAIT_MS 100
+#define DATA_SIZE sizeof(record) * RECORD_NUM
+#define SEL_WAIT_MS 2000
 #define POST_REQU '0'
 #define POST_AVAI '1'
 #define POST_NAVAI '2'
@@ -44,6 +45,7 @@ int last = -1;
 int fd_bulletinBoard;
 bool locked_post[RECORD_NUM] = {};
 char buffer[BUFFER_SIZE];
+char data[DATA_SIZE];
 
 // initailize a server, exit for error
 static void init_server(unsigned short port);
@@ -63,8 +65,7 @@ bool lock_post(int conn_fd) {
         last = (last + 1) % RECORD_NUM;
         if (locked_post[last]) continue;
         struct flock check = set_flock(F_WRLCK, SEEK_SET, sizeof(record) * last, sizeof(record));
-        fcntl(fd_bulletinBoard, F_SETLK, &check);
-        if (errno == EAGAIN) {errno = 0; continue;}
+        if (fcntl(fd_bulletinBoard, F_SETLK, &check) < 0) continue;
         locked_post[last] = true;
         requestP[conn_fd].k_locked_post = last;
         return true;
@@ -73,25 +74,25 @@ bool lock_post(int conn_fd) {
 }
 
 void send_post(int conn_fd) {
+    char *ptr = data;
+    int n_post = 0;
     int n_locked_post = 0;
     for (int i = 0; i < RECORD_NUM; i++) {
         if (locked_post[i]) {n_locked_post++; continue;}
         struct flock check = set_flock(F_RDLCK, SEEK_SET, sizeof(record) * i, sizeof(record));
-        fcntl(fd_bulletinBoard, F_SETLK, &check);
-        if (errno == EAGAIN) {errno = 0; n_locked_post++; continue;}
-        record re;
-        int nbytes = pread(fd_bulletinBoard, &re, sizeof(record), sizeof(record) * i);
-        if (!(nbytes != sizeof(record) || (re.From[0] == '\0' && re.Content[0] == '\0')))
-            write(conn_fd, &re, sizeof(re));
+        if (fcntl(fd_bulletinBoard, F_SETLK, &check) < 0) {n_locked_post++; continue;}
+        int nbytes = pread(fd_bulletinBoard, ptr, sizeof(record), sizeof(record) * i);
+        if (!(nbytes != sizeof(record) || (ptr[0] == '\0' && ptr[FROM_LEN] == '\0'))) {
+            ptr += sizeof(record);
+            n_post++;
+        }
         check = set_flock(F_UNLCK, SEEK_SET, sizeof(record) * i, sizeof(record));
         fcntl(fd_bulletinBoard, F_SETLK, &check);
     }
-    strcpy(buffer, "#");
-    write(conn_fd, buffer, 1);
-    if (n_locked_post > 0) {
-        sprintf(buffer, "[Warning] Try to access locked post - %d\n", n_locked_post);
-        write(STDOUT_FILENO, buffer, strlen(buffer));
-    }
+    write(conn_fd, &n_post, sizeof(int));
+    write(conn_fd, data, sizeof(record) * n_post);
+    if (n_locked_post > 0)
+        printf("[Warning] Try to access locked post - %d\n", n_locked_post);
 }
 
 void write_post(int conn_fd) {
@@ -101,8 +102,7 @@ void write_post(int conn_fd) {
     struct flock check = set_flock(F_UNLCK, SEEK_SET, sizeof(record) * requestP[conn_fd].k_locked_post, sizeof(record));
     fcntl(fd_bulletinBoard, F_SETLK, &check);
     locked_post[requestP[conn_fd].k_locked_post] = false;
-    sprintf(buffer, "[Log] Receive post from %s\n", re.From);
-    write(STDOUT_FILENO, buffer, strlen(buffer));
+    printf("[Log] Receive post from %s\n", re.From);
 }
 
 int main(int argc, char** argv) {
@@ -187,6 +187,7 @@ int main(int argc, char** argv) {
             free_request(&requestP[file_fd]);
             break;
         }
+        fflush(stdout);
     }
     free(requestP);
     return 0;
